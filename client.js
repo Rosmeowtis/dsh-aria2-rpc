@@ -179,7 +179,7 @@ window.__ModuleLoader__.load({
                   h('button', { type: 'button', disabled: !credential || !credential.configured, onClick: () => writeSecret(true) }, t('clearSecret'))),
               ),
               h('div', { className: 'aria2-rpc-actions' }, h('button', { type: 'button', className: `aria2-rpc-test ${testState === 'success' ? 'success' : testState === 'failure' ? 'failure' : ''}`, disabled, onClick: testConnection }, t(testing ? 'testing' : 'test'))),
-              notice && h('p', { role: failed ? 'alert' : 'status', className: failed ? 'aria2-rpc-error' : '' }, notice),
+              notice && h('p', { role: failed ? 'alert' : 'status', className: `aria2-rpc-note${failed ? ' aria2-rpc-error' : ''}` }, notice),
             );
           }
           ready.slots.inject('plugins.bundle.config', () => ready.slots.register({ name: 'plugins.bundle.config', key: 'dsh-aria2-rpc' }, Settings));
