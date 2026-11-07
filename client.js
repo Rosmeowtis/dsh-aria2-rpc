@@ -6,9 +6,8 @@ window.__ModuleLoader__.load({
     const NS = 'aria2-rpc';
     const dictionaries = {
       zh: {
-        host: 'RPC 主机', port: 'RPC 端口', timeout: '请求超时（毫秒）', ref: '密钥凭据引用',
-        hostHint: 'DNS 主机名或 IPv4，不含协议、端口和路径。支持远程 aria2；当前使用 HTTP，请仅在可信网络或加密隧道中连接。',
-        refHint: '默认 ARIA2_RPC_SECRET。修改引用并保存后，再为该引用配置密钥。',
+        host: 'RPC 主机', port: 'RPC 端口', timeout: '请求超时（毫秒）',
+        hostHint: '当前使用 HTTP，请确保在可信网络下使用。',
         save: '保存连接设置', saving: '保存中…', saved: '连接设置已保存。',
         rejected: '保存失败或配置已在别处变更。草稿已保留；请重新打开页面核对后再保存。',
         readOnly: '配置不可用或当前连接不允许写入。',
@@ -16,20 +15,17 @@ window.__ModuleLoader__.load({
         secretHint: '仅写入 DSH 凭据存储，不回显原值；留空不改变。清除存储值后，环境变量等来源仍可能生效。',
         saveSecret: '保存密钥', clearSecret: '清除存储的密钥', secretSaved: '密钥操作已完成。',
         secretFailed: '凭据操作失败，请检查连接权限；已保存的设置不受影响。',
-        details: '下载由已有 aria2 执行；目录属于 aria2 所在机器。仅在下载源提供校验和时传入，实际哈希由 aria2 计算。取消任务不会删除文件。',
-        unsetHint: '未设置密钥时不发送 token。建议为 RPC 配置密钥；HTTP 不加密密钥或下载地址。',
+        details: '连接现有 aria2 RPC 服务，不自带 aria2，提供创建、查询、暂停、恢复、取消功能。',
         test: '测试连接', testing: '测试中…', connected: '连接成功，aria2 版本：',
-        testHint: '测试当前输入，不保存配置、不创建任务。密钥框留空时使用当前凭据引用中的密钥。',
         testFailed: '测试失败：', NETWORK: '无法连接，请检查主机、端口及防火墙。', TIMEOUT: '请求超时。',
         RPC_ERROR: 'RPC 拒绝请求，请检查密钥及服务配置。', HTTP_ERROR: 'HTTP 响应异常，请检查 RPC 端口。',
-        INVALID_INPUT: '主机、端口、超时或凭据引用格式不正确。', BAD_RESPONSE: '响应不是有效的 aria2 RPC 版本信息。',
+        INVALID_INPUT: '主机、端口或超时格式不正确。', BAD_RESPONSE: '响应不是有效的 aria2 RPC 版本信息。',
         REDIRECT: 'RPC 地址发生重定向，已拒绝。', RESPONSE_TOO_LARGE: 'RPC 响应过大。', ABORTED: '测试已取消。',
         CREDENTIAL_ERROR: '无法读取凭据。', TRANSPORT_ERROR: '无法调用 DSH 测试接口，请刷新页面重试。',
       },
       en: {
-        host: 'RPC host', port: 'RPC port', timeout: 'Request timeout (ms)', ref: 'Secret credential reference',
-        hostHint: 'DNS name or IPv4 without scheme, port or path. Remote aria2 is supported. HTTP is not encrypted: use a trusted network or encrypted tunnel.',
-        refHint: 'Default: ARIA2_RPC_SECRET. Save a changed reference before configuring its secret.',
+        host: 'RPC host', port: 'RPC port', timeout: 'Request timeout (ms)',
+        hostHint: 'Uses HTTP; use it only on a trusted network.',
         save: 'Save connection settings', saving: 'Saving…', saved: 'Connection settings saved.',
         rejected: 'Save failed or settings changed elsewhere. Your draft was kept; reopen this page to review before saving again.',
         readOnly: 'Settings are unavailable or this connection is read-only.',
@@ -37,13 +33,11 @@ window.__ModuleLoader__.load({
         secretHint: 'Written only to DSH credentials, never read back. Blank keeps it unchanged. Environment values may still apply after removing the stored secret.',
         saveSecret: 'Save secret', clearSecret: 'Remove stored secret', secretSaved: 'Credential operation completed.',
         secretFailed: 'Credential operation failed. Check connection permissions; saved settings are unaffected.',
-        details: 'Your existing aria2 performs downloads. Directories belong to its machine. Supply a checksum only when the source provides one; aria2 computes the hash. Cancelling never deletes files.',
-        unsetHint: 'No token is sent when no secret is configured. A secret is recommended; HTTP does not encrypt it or the download URL.',
+        details: 'Connects to an existing aria2 RPC service without bundling aria2; provides create, query, pause, resume, and cancel.',
         test: 'Test connection', testing: 'Testing…', connected: 'Connected, aria2 version: ',
-        testHint: 'Tests current input without saving settings or creating a task. A blank secret uses the current credential reference.',
         testFailed: 'Connection test failed: ', NETWORK: 'Cannot connect. Check host, port and firewall.', TIMEOUT: 'Request timed out.',
         RPC_ERROR: 'RPC rejected the request. Check the secret and service configuration.', HTTP_ERROR: 'Unexpected HTTP response. Check the RPC port.',
-        INVALID_INPUT: 'Invalid host, port, timeout or credential reference.', BAD_RESPONSE: 'Not a valid aria2 RPC version response.',
+        INVALID_INPUT: 'Invalid host, port or timeout.', BAD_RESPONSE: 'Not a valid aria2 RPC version response.',
         REDIRECT: 'RPC redirect rejected.', RESPONSE_TOO_LARGE: 'RPC response is too large.', ABORTED: 'Test cancelled.',
         CREDENTIAL_ERROR: 'Cannot read the credential.', TRANSPORT_ERROR: 'Cannot call the DSH test endpoint. Refresh and retry.',
       },
@@ -60,6 +54,16 @@ window.__ModuleLoader__.load({
       .aria2-rpc-form button:disabled,.aria2-rpc-form input:disabled{opacity:.5;cursor:default}
       .aria2-rpc-form .aria2-rpc-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
       .aria2-rpc-form .aria2-rpc-error{color:var(--dsw-alias-state-error-primary)}
+      .aria2-rpc-form .aria2-rpc-note{background:var(--dsw-alias-bg-layer-2);border-radius:8px;padding:10px 12px;font-size:13px}
+      .aria2-rpc-form .aria2-rpc-secret-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .aria2-rpc-form .aria2-rpc-secret-head label{display:block;font-weight:500}
+      .aria2-rpc-form .aria2-rpc-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:500;line-height:1.5}
+      .aria2-rpc-form .aria2-rpc-status.configured{background:#15803d;color:#fff}
+      .aria2-rpc-form .aria2-rpc-status.missing{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary)}
+      .aria2-rpc-form .aria2-rpc-test.success{background:#15803d;border-color:#15803d;color:#fff}
+      .aria2-rpc-form .aria2-rpc-test.failure{background:#b91c1c;border-color:#b91c1c;color:#fff}
+      .aria2-rpc-form .aria2-rpc-test.success:hover:not(:disabled){background:#116932}
+      .aria2-rpc-form .aria2-rpc-test.failure:hover:not(:disabled){background:#991b1b}
       .aria2-rpc-form fieldset{margin:0;padding:16px 0 0;border:0;border-top:1px solid var(--dsw-alias-border-l1);display:flex;flex-direction:column;gap:12px;min-width:0}
       @media(max-width:520px){.aria2-rpc-form .aria2-rpc-pair{grid-template-columns:1fr}}
     `;
@@ -76,6 +80,7 @@ window.__ModuleLoader__.load({
             const [draft, setDraft] = React.useState(null);
             const [busy, setBusy] = React.useState(false);
             const [testing, setTesting] = React.useState(false);
+            const [testState, setTestState] = React.useState('idle');
             const testAbort = React.useRef(null);
             React.useEffect(() => () => testAbort.current?.abort(), []);
             const [notice, setNotice] = React.useState('');
@@ -101,7 +106,7 @@ window.__ModuleLoader__.load({
             }, [ref]);
             const edit = (key, value) => {
               setDraft(old => ({ revision: old ? old.revision : state.revision, values: { ...(old ? old.values : {}), [key]: value } }));
-              setNotice('');
+              setNotice(''); setTestState('idle');
             };
             const save = async event => {
               event.preventDefault();
@@ -129,7 +134,7 @@ window.__ModuleLoader__.load({
               const current = { ...values, ...(draft ? draft.values : {}) };
               const controller = new AbortController();
               testAbort.current = controller;
-              setTesting(true); setBusy(true); setNotice(''); setFailed(false);
+              setTesting(true); setTestState('testing'); setBusy(true); setNotice(''); setFailed(false);
               try {
                 const response = await fetch('./api/aria2-rpc.test', {
                   method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
@@ -138,13 +143,13 @@ window.__ModuleLoader__.load({
                 });
                 const result = await response.json();
                 if (controller.signal.aborted) return;
-                if (response.ok && result.ok === true && typeof result.version === 'string') setNotice(t('connected') + result.version);
+                if (response.ok && result.ok === true && typeof result.version === 'string') { setTestState('success'); setNotice(t('connected') + result.version); }
                 else {
                   const code = ['NETWORK', 'TIMEOUT', 'RPC_ERROR', 'HTTP_ERROR', 'INVALID_INPUT', 'BAD_RESPONSE', 'REDIRECT', 'RESPONSE_TOO_LARGE', 'ABORTED', 'CREDENTIAL_ERROR'].includes(result.code) ? result.code : 'TRANSPORT_ERROR';
-                  setFailed(true); setNotice(t('testFailed') + t(code));
+                  setTestState('failure'); setFailed(true); setNotice(t('testFailed') + t(code));
                 }
               } catch {
-                if (!controller.signal.aborted) { setFailed(true); setNotice(t('testFailed') + t('TRANSPORT_ERROR')); }
+                if (!controller.signal.aborted) { setTestState('failure'); setFailed(true); setNotice(t('testFailed') + t('TRANSPORT_ERROR')); }
               } finally {
                 if (!controller.signal.aborted) { setTesting(false); setBusy(false); }
               }
@@ -155,27 +160,25 @@ window.__ModuleLoader__.load({
             }));
             return h('div', { className: 'aria2-rpc-form' },
               h('style', null, css),
-              h('p', null, t('details')),
+              h('p', { className: 'aria2-rpc-note' }, t('details')),
               !writable && h('p', { role: 'status' }, t('readOnly')),
               h('form', { onSubmit: save, className: 'aria2-rpc-form' },
                 field('rpcHost', 'host', '127.0.0.1', 'text', { pattern: '[A-Za-z0-9][A-Za-z0-9.\\-]*' }),
-                h('p', null, t('hostHint')),
+                h('p', { className: 'aria2-rpc-note' }, t('hostHint')),
                 h('div', { className: 'aria2-rpc-pair' }, field('rpcPort', 'port', 6800, 'number', { min: 1, max: 65535, step: 1 }), field('rpcTimeoutMs', 'timeout', 10000, 'number', { min: 1, max: 60000, step: 1 })),
-                field('rpcSecretRef', 'ref', 'ARIA2_RPC_SECRET', 'text', { pattern: '[A-Za-z_][A-Za-z0-9_]*' }),
-                h('p', null, t('refHint')),
                 h('div', { className: 'aria2-rpc-actions' }, h('button', { type: 'submit', disabled: disabled || !draft }, t(busy ? 'saving' : 'save'))),
               ),
               h('fieldset', { disabled: disabled || !credential || !credential.writable || !!draft },
-                h('label', { htmlFor: 'aria2-secret' }, `${t('secret')} · ${ref} · ${t(credential ? credential.configured ? 'configured' : 'missing' : 'unknown')}`,
-                  h('input', { id: 'aria2-secret', type: 'password', autoComplete: 'new-password', value: secret, onChange: e => setSecret(e.target.value) })),
-                h('p', null, t('secretHint')),
+                h('div', { className: 'aria2-rpc-secret-head' },
+                  h('label', { htmlFor: 'aria2-secret' }, t('secret')),
+                  h('span', { className: `aria2-rpc-status ${credential && credential.configured ? 'configured' : 'missing'}` }, t(credential ? credential.configured ? 'configured' : 'missing' : 'unknown'))),
+                h('input', { id: 'aria2-secret', type: 'password', autoComplete: 'new-password', value: secret, onChange: e => setSecret(e.target.value) }),
+                h('p', { className: 'aria2-rpc-note' }, t('secretHint')),
                 h('div', { className: 'aria2-rpc-actions' },
                   h('button', { type: 'button', disabled: !secret, onClick: () => writeSecret(false) }, t('saveSecret')),
                   h('button', { type: 'button', disabled: !credential || !credential.configured, onClick: () => writeSecret(true) }, t('clearSecret'))),
               ),
-              h('p', null, t('unsetHint')),
-              h('div', { className: 'aria2-rpc-actions' }, h('button', { type: 'button', disabled, onClick: testConnection }, t(testing ? 'testing' : 'test'))),
-              h('p', null, t('testHint')),
+              h('div', { className: 'aria2-rpc-actions' }, h('button', { type: 'button', className: `aria2-rpc-test ${testState === 'success' ? 'success' : testState === 'failure' ? 'failure' : ''}`, disabled, onClick: testConnection }, t(testing ? 'testing' : 'test'))),
               notice && h('p', { role: failed ? 'alert' : 'status', className: failed ? 'aria2-rpc-error' : '' }, notice),
             );
           }
