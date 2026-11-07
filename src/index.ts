@@ -6,9 +6,11 @@ import type {} from '@deepseek-ai/dsh-settings';
 import type {} from '@deepseek-ai/dsh-sandbox-policy';
 import type {} from '@deepseek-ai/dsh-plan-mode';
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
+import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { Aria2Error, createAria2Client } from './rpc.js';
 import type {} from '@deepseek-ai/dsh-client-connection';
 import { testConnection } from './connection-test.js';
+import { describeCompletion, startAria2Events, type CompletionNotice } from './events.js';
 
 export const name = 'aria2-rpc';
 export const inject = ['tools', 'credentials', 'sandboxPolicy', 'agents'];
@@ -41,6 +43,39 @@ export function apply(ctx: Context, config: Configuration) {
   ctx.effect(() => {
     const lifetime = new AbortController();
     const disposers: (() => void)[] = [];
+    const tracked = new Map<string, string>();
+    const pending = new Map<string, boolean>();
+    const logger = ctx.logger;
+    const notify = async (sessionId: string, notice: CompletionNotice): Promise<void> => {
+      const agent = ctx.agents.get(sessionId as never);
+      if (!agent) return;
+      let secret: string | undefined;
+      try { secret = (await ctx.credentials.resolve(credentialRef(config.rpcSecretRef.get())))?.value; } catch { /* no credential: still push */ }
+      const text = await describeCompletion(notice, {
+        host: config.rpcHost.get(), port: config.rpcPort.get(), timeoutMs: config.rpcTimeoutMs.get(), secret, signal: lifetime.signal,
+      });
+      agent.followup(createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'aria2-rpc' } }));
+      logger?.info?.(`[aria2-rpc] completion notification queued for ${sessionId}: ${notice.gid}`);
+    };
+    const handleNotice = (notice: CompletionNotice): void => {
+      logger?.info?.(`[aria2-rpc] ${notice.failed ? 'error' : 'complete'} event: ${notice.gid}`);
+      const sessionId = tracked.get(notice.gid);
+      if (sessionId === undefined) {
+        pending.set(notice.gid, notice.failed);
+        if (pending.size > 50) {
+          const oldest = pending.keys().next().value;
+          if (oldest !== undefined) pending.delete(oldest);
+        }
+        return;
+      }
+      tracked.delete(notice.gid);
+      void notify(sessionId, notice).catch(() => {});
+    };
+    startAria2Events({
+      endpoint: () => ({ host: config.rpcHost.get(), port: config.rpcPort.get() }),
+      onNotice: handleNotice,
+      signal: lifetime.signal,
+    });
     const register = (definition: Omit<ToolDefinition, 'output'>) => {
       disposers.push(ctx.tools.register({
         ...definition,
@@ -77,6 +112,17 @@ export function apply(ctx: Context, config: Configuration) {
         const client = createAria2Client({ rpcHost, rpcPort, timeoutMs, secret, signal: lifetime.signal });
         // Each boundary validates unknown input again; schemas are discovery, not enforcement.
         const value = await client[method](args as never, { signal: exec.signal });
+        if (method === 'download' && exec.agent) {
+          const result = value as { outcome: string; gid: string };
+          if (result.outcome === 'ok') {
+            tracked.set(result.gid, exec.agent.id);
+            const failed = pending.get(result.gid);
+            if (failed !== undefined) {
+              pending.delete(result.gid);
+              void notify(exec.agent.id, { gid: result.gid, failed }).catch(() => {});
+            }
+          }
+        }
         return { ok: true, ...value };
       } catch (error) {
         return { ok: false, error: { code: error instanceof Aria2Error ? error.code : 'CONFIG_OR_CREDENTIAL_ERROR', message: error instanceof Aria2Error ? error.message : '配置或凭据不可用，请检查插件设置。' } };
@@ -84,7 +130,7 @@ export function apply(ctx: Context, config: Configuration) {
     };
     register({
       name: 'aria2_download',
-      description: '向已有 aria2 服务提交单文件直链下载，立即返回 GID；不等待完成。文件保存在 aria2 所在机器。只有下载源明确提供校验和时才填写 checksum，哈希由 aria2 计算。创建需完全访问模式。结果未知时先用 GID 查状态，不要重复提交。',
+      description: '向已有 aria2 服务提交单文件直链下载，立即返回 GID；不等待完成。文件保存在 aria2 所在机器。只有下载源明确提供校验和时才填写 checksum，哈希由 aria2 计算。创建需完全访问模式。结果未知时先用 GID 查状态，不要重复提交。任务完成或失败时，插件会向发起会话推送通知。',
       parameters: schema({
         url: { type: 'string', description: 'HTTP/HTTPS 文件直链，不允许内嵌用户名和密码。' },
         directory: { type: 'string', description: 'aria2 所在机器的绝对目录；省略使用其默认目录。' },
@@ -112,6 +158,8 @@ export function apply(ctx: Context, config: Configuration) {
     });
     return () => {
       lifetime.abort();
+      tracked.clear();
+      pending.clear();
       for (const dispose of disposers.reverse()) dispose();
     };
   });
