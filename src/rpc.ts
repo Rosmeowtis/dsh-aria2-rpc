@@ -60,6 +60,7 @@ export type Aria2MutateResult<T> = ({ outcome: 'ok' } & T)
 export type Aria2DownloadResult = Aria2MutateResult<{ gid: string }>;
 export type Aria2ControlResult = Aria2MutateResult<{ gid: string; action: Aria2ControlAction }>;
 export interface Aria2Client {
+  version(opts?: { signal?: AbortSignal }): Promise<{ version: string }>;
   download(args: Aria2DownloadArgs, opts?: { signal?: AbortSignal }): Promise<Aria2DownloadResult>;
   status(args: Aria2StatusArgs, opts?: { signal?: AbortSignal }): Promise<Aria2StatusResult>;
   control(args: Aria2ControlArgs, opts?: { signal?: AbortSignal }): Promise<Aria2ControlResult>;
@@ -290,6 +291,15 @@ export function createAria2Client(config: Aria2ClientConfig): Aria2Client {
     }
   }
   return {
+    async version(opts) {
+      const result = await rpc('aria2.getVersion', [], signalFor(opts));
+      const version = result && typeof result === 'object' && !Array.isArray(result)
+        ? (result as Record<string, unknown>).version : undefined;
+      if (typeof version !== 'string' || !/^[0-9]+\.[0-9]+(?:\.[0-9]+)?(?:[-+][A-Za-z0-9.-]+)?$/.test(version) || version.length > 64) {
+        fail('BAD_RESPONSE', 'aria2 returned invalid version information');
+      }
+      return { version };
+    },
     async download(args, opts) {
       const gid = (() => { let value: string; do { value = randomBytes(8).toString('hex'); } while (!GID.test(value)); return value; })();
       const options = downloadOptions(args, gid);

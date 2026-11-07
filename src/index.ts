@@ -6,13 +6,16 @@ import type {} from '@deepseek-ai/dsh-settings';
 import type {} from '@deepseek-ai/dsh-sandbox-policy';
 import type {} from '@deepseek-ai/dsh-plan-mode';
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
-import { Aria2Error, createAria2Client, validateHost } from './rpc.js';
+import { Aria2Error, createAria2Client } from './rpc.js';
+import type {} from '@deepseek-ai/dsh-client-connection';
+import { testConnection } from './connection-test.js';
 
 export const name = 'aria2-rpc';
 export const inject = ['tools', 'credentials', 'sandboxPolicy', 'agents'];
 
 export const Config = z.object({
-  rpcHost: z.transform(z.string(), validateHost).default('127.0.0.1').volatile(),
+  // Settings schemas cross to the browser: use serializable constraints, never Node callbacks.
+  rpcHost: z.string().pattern(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.?$/i).default('127.0.0.1').volatile(),
   rpcPort: z.natural().min(1).max(65535).default(6800).volatile(),
   rpcSecretRef: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/).role('credential-ref').default('ARIA2_RPC_SECRET').volatile(),
   rpcTimeoutMs: z.natural().min(1).max(60000).default(10000).volatile(),
@@ -23,6 +26,15 @@ const gidSchema = { type: 'string', pattern: '^[0-9a-fA-F]{16}$', description: '
 const schema = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', properties, required, additionalProperties: false });
 
 export function apply(ctx: Context, config: Configuration) {
+  ctx.inject(['connection'], ready => {
+    const lifetime = new AbortController();
+    ready.effect(() => () => lifetime.abort());
+    // Connection owns browser authentication and Host/Origin checks for /api routes.
+    ready.connection.fetch.register({
+      path: '/api/aria2-rpc.test', methods: ['POST'], requestBody: 'buffered',
+      fetch: request => testConnection(request, async ref => (await ready.credentials.resolve(credentialRef(ref)))?.value, lifetime.signal),
+    });
+  });
   ctx.inject(['settings'], ready => {
     ready.effect(() => ready.settings.configure({ auto: false }, ctx.fiber));
   });

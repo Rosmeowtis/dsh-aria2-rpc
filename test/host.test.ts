@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Context } from '@deepseek-ai/cordis';
+import Schema from '@deepseek-ai/schemastery';
 import { apply, Config } from '../src/index.js';
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
 
@@ -12,7 +13,15 @@ function mount(mode = 'read-only', plan = false, credentialAvailable = false) {
   const agent = { id: 'test', session: {}, ctx: { get: () => ({ get: () => ({ active: plan }) }) } };
   const ctx = {
     fiber: {},
-    inject: () => {},
+    inject: (keys: string[], callback: (ctx: unknown) => void) => {
+      if (keys.includes('connection')) callback({
+        effect: (fn: () => () => void) => { disposers.push(fn()); },
+        connection: { fetch: { register: (route: { path: string; methods: string[]; fetch: (request: Request) => Promise<Response> }) => {
+          assert.equal(route.path, '/api/aria2-rpc.test');
+          assert.deepEqual(route.methods, ['POST']);
+        } } },
+      });
+    },
     effect: (fn: () => () => void) => { disposers.push(fn()); },
     tools: { register: (tool: ToolDefinition) => { definitions.set(tool.name, tool); return () => { definitions.delete(tool.name); }; } },
     agents: { get: () => agent },
@@ -68,6 +77,17 @@ test('cancelled mutation retains queryable gid in thrown tool failure', async ()
       return true;
     });
   } finally { globalThis.fetch = originalFetch; plugin.dispose(); }
+});
+
+test('settings schema roundtrip validates in browser without Node callback closures', () => {
+  const wire = JSON.parse(JSON.stringify(Config.toJSON()));
+  const browserSchema = new Schema(wire);
+  for (const rpcHost of ['127.0.0.1', 'aria2.example.com', 'localhost']) {
+    const values = { rpcHost, rpcPort: 6800, rpcSecretRef: 'ARIA2_RPC_SECRET', rpcTimeoutMs: 10000 };
+    assert.doesNotThrow(() => browserSchema(values));
+  }
+  assert.throws(() => browserSchema({ rpcHost: 'http://host/path' }));
+  assert.throws(() => browserSchema({ rpcPort: 0 }));
 });
 
 test('Config rejects invalid ports and reference names', () => {

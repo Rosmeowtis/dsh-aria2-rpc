@@ -18,6 +18,13 @@ window.__ModuleLoader__.load({
         secretFailed: '凭据操作失败，请检查连接权限；已保存的设置不受影响。',
         details: '下载由已有 aria2 执行；目录属于 aria2 所在机器。仅在下载源提供校验和时传入，实际哈希由 aria2 计算。取消任务不会删除文件。',
         unsetHint: '未设置密钥时不发送 token。建议为 RPC 配置密钥；HTTP 不加密密钥或下载地址。',
+        test: '测试连接', testing: '测试中…', connected: '连接成功，aria2 版本：',
+        testHint: '测试当前输入，不保存配置、不创建任务。密钥框留空时使用当前凭据引用中的密钥。',
+        testFailed: '测试失败：', NETWORK: '无法连接，请检查主机、端口及防火墙。', TIMEOUT: '请求超时。',
+        RPC_ERROR: 'RPC 拒绝请求，请检查密钥及服务配置。', HTTP_ERROR: 'HTTP 响应异常，请检查 RPC 端口。',
+        INVALID_INPUT: '主机、端口、超时或凭据引用格式不正确。', BAD_RESPONSE: '响应不是有效的 aria2 RPC 版本信息。',
+        REDIRECT: 'RPC 地址发生重定向，已拒绝。', RESPONSE_TOO_LARGE: 'RPC 响应过大。', ABORTED: '测试已取消。',
+        CREDENTIAL_ERROR: '无法读取凭据。', TRANSPORT_ERROR: '无法调用 DSH 测试接口，请刷新页面重试。',
       },
       en: {
         host: 'RPC host', port: 'RPC port', timeout: 'Request timeout (ms)', ref: 'Secret credential reference',
@@ -32,6 +39,13 @@ window.__ModuleLoader__.load({
         secretFailed: 'Credential operation failed. Check connection permissions; saved settings are unaffected.',
         details: 'Your existing aria2 performs downloads. Directories belong to its machine. Supply a checksum only when the source provides one; aria2 computes the hash. Cancelling never deletes files.',
         unsetHint: 'No token is sent when no secret is configured. A secret is recommended; HTTP does not encrypt it or the download URL.',
+        test: 'Test connection', testing: 'Testing…', connected: 'Connected, aria2 version: ',
+        testHint: 'Tests current input without saving settings or creating a task. A blank secret uses the current credential reference.',
+        testFailed: 'Connection test failed: ', NETWORK: 'Cannot connect. Check host, port and firewall.', TIMEOUT: 'Request timed out.',
+        RPC_ERROR: 'RPC rejected the request. Check the secret and service configuration.', HTTP_ERROR: 'Unexpected HTTP response. Check the RPC port.',
+        INVALID_INPUT: 'Invalid host, port, timeout or credential reference.', BAD_RESPONSE: 'Not a valid aria2 RPC version response.',
+        REDIRECT: 'RPC redirect rejected.', RESPONSE_TOO_LARGE: 'RPC response is too large.', ABORTED: 'Test cancelled.',
+        CREDENTIAL_ERROR: 'Cannot read the credential.', TRANSPORT_ERROR: 'Cannot call the DSH test endpoint. Refresh and retry.',
       },
     };
     const css = `
@@ -61,6 +75,9 @@ window.__ModuleLoader__.load({
             const state = React.useSyncExternalStore(fn => form.subscribe(fn), () => form.getSnapshot());
             const [draft, setDraft] = React.useState(null);
             const [busy, setBusy] = React.useState(false);
+            const [testing, setTesting] = React.useState(false);
+            const testAbort = React.useRef(null);
+            React.useEffect(() => () => testAbort.current?.abort(), []);
             const [notice, setNotice] = React.useState('');
             const [failed, setFailed] = React.useState(false);
             const [secret, setSecret] = React.useState('');
@@ -108,6 +125,30 @@ window.__ModuleLoader__.load({
               } catch { setFailed(true); setNotice(t('secretFailed')); }
               finally { setBusy(false); }
             };
+            const testConnection = async () => {
+              const current = { ...values, ...(draft ? draft.values : {}) };
+              const controller = new AbortController();
+              testAbort.current = controller;
+              setTesting(true); setBusy(true); setNotice(''); setFailed(false);
+              try {
+                const response = await fetch('./api/aria2-rpc.test', {
+                  method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+                  signal: controller.signal,
+                  body: JSON.stringify({ rpcHost: current.rpcHost, rpcPort: Number(current.rpcPort), rpcTimeoutMs: Number(current.rpcTimeoutMs), rpcSecretRef: current.rpcSecretRef, ...(secret ? { secret } : {}) }),
+                });
+                const result = await response.json();
+                if (controller.signal.aborted) return;
+                if (response.ok && result.ok === true && typeof result.version === 'string') setNotice(t('connected') + result.version);
+                else {
+                  const code = ['NETWORK', 'TIMEOUT', 'RPC_ERROR', 'HTTP_ERROR', 'INVALID_INPUT', 'BAD_RESPONSE', 'REDIRECT', 'RESPONSE_TOO_LARGE', 'ABORTED', 'CREDENTIAL_ERROR'].includes(result.code) ? result.code : 'TRANSPORT_ERROR';
+                  setFailed(true); setNotice(t('testFailed') + t(code));
+                }
+              } catch {
+                if (!controller.signal.aborted) { setFailed(true); setNotice(t('testFailed') + t('TRANSPORT_ERROR')); }
+              } finally {
+                if (!controller.signal.aborted) { setTesting(false); setBusy(false); }
+              }
+            };
             const field = (key, label, fallback, type, props = {}) => h('label', { key, htmlFor: `aria2-${key}` }, t(label), h('input', {
               id: `aria2-${key}`, type, value: draft && key in draft.values ? draft.values[key] : values[key] ?? fallback,
               disabled, onChange: e => edit(key, e.target.value), required: true, spellCheck: false, ...props,
@@ -133,6 +174,8 @@ window.__ModuleLoader__.load({
                   h('button', { type: 'button', disabled: !credential || !credential.configured, onClick: () => writeSecret(true) }, t('clearSecret'))),
               ),
               h('p', null, t('unsetHint')),
+              h('div', { className: 'aria2-rpc-actions' }, h('button', { type: 'button', disabled, onClick: testConnection }, t(testing ? 'testing' : 'test'))),
+              h('p', null, t('testHint')),
               notice && h('p', { role: failed ? 'alert' : 'status', className: failed ? 'aria2-rpc-error' : '' }, notice),
             );
           }
