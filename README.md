@@ -8,7 +8,7 @@ DSH 插件：连接**已有的 aria2 JSON-RPC 服务**（HTTP，`/jsonrpc`），
 | `aria2_status` | 读取任务状态、进度、速度、文件路径与脱敏错误。 |
 | `aria2_control` | `pause` / `resume` / `cancel`。取消保留部分文件，不关闭 aria2。 |
 
-配置：设置 → 插件 → Aria2 RPC，可设置 `rpcHost`、`rpcPort`、密钥与请求超时；密钥固定使用凭据 `ARIA2_RPC_SECRET`。无密钥时不发送 token；HTTP 不加密，远程连接请仅在可信网络或加密隧道中使用。
+配置：设置 → 插件 → Aria2 RPC，可设置 `rpcHost`、`rpcPort`、密钥与请求超时；密钥固定使用凭据 `ARIA2_RPC_SECRET`，无密钥时不发送；HTTP 不加密，远程连接请仅在可信网络或加密隧道中使用。
 
 设置页的「测试连接」使用当前输入的主机、端口与超时调用 `aria2.getVersion`，无需先保存。密钥框中有内容时使用该临时值，否则从当前凭据引用读取；测试不保存配置、不创建任务，成功显示 aria2 版本，失败显示连通性、超时或鉴权提示。
 
