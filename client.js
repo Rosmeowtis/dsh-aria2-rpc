@@ -47,6 +47,7 @@ window.__ModuleLoader__.load({
       .aria2-rpc-form label{display:flex;flex-direction:column;gap:8px;font-weight:500}
       .aria2-rpc-form input{box-sizing:border-box;width:100%;min-height:40px;padding:8px 12px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-weight:400}
       .aria2-rpc-form input:focus-visible,.aria2-rpc-form button:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
+      .aria2-rpc-form input::placeholder{color:var(--dsw-alias-state-idle-primary);opacity:1}
       .aria2-rpc-form p{margin:0;color:var(--dsw-alias-label-secondary);font-weight:400}
       .aria2-rpc-form .aria2-rpc-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px}
       .aria2-rpc-form button{min-height:40px;padding:8px 14px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}
@@ -154,8 +155,9 @@ window.__ModuleLoader__.load({
                 if (!controller.signal.aborted) { setTesting(false); setBusy(false); }
               }
             };
+            const placeholders = { rpcHost: '127.0.0.1', rpcPort: '6800', rpcTimeoutMs: '10000' };
             const field = (key, label, fallback, type, props = {}) => h('label', { key, htmlFor: `aria2-${key}` }, t(label), h('input', {
-              id: `aria2-${key}`, type, value: draft && key in draft.values ? draft.values[key] : values[key] ?? fallback,
+              id: `aria2-${key}`, type, placeholder: placeholders[key], value: draft && key in draft.values ? draft.values[key] : values[key] ?? fallback,
               disabled, onChange: e => edit(key, e.target.value), required: true, spellCheck: false, ...props,
             }));
             return h('div', { className: 'aria2-rpc-form' },
@@ -172,7 +174,7 @@ window.__ModuleLoader__.load({
                 h('div', { className: 'aria2-rpc-secret-head' },
                   h('label', { htmlFor: 'aria2-secret' }, t('secret')),
                   h('span', { className: `aria2-rpc-status ${credential && credential.configured ? 'configured' : 'missing'}` }, t(credential ? credential.configured ? 'configured' : 'missing' : 'unknown'))),
-                h('input', { id: 'aria2-secret', type: 'password', autoComplete: 'new-password', value: secret, onChange: e => setSecret(e.target.value) }),
+                h('input', { id: 'aria2-secret', type: 'password', autoComplete: 'new-password', placeholder: 'rpc-secret', value: secret, onChange: e => setSecret(e.target.value) }),
                 h('p', { className: 'aria2-rpc-note' }, t('secretHint')),
                 h('div', { className: 'aria2-rpc-actions' },
                   h('button', { type: 'button', disabled: !secret, onClick: () => writeSecret(false) }, t('saveSecret')),
