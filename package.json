@@ -1,5 +1,5 @@
 {
-  "name": "dsh-aria2-rpc",
+  "name": "@rosmeowtis/dsh-aria2-rpc",
   "version": "0.1.0",
   "description": "Control an existing aria2 JSON-RPC service from DSH. No bundled downloader.",
   "license": "MIT",
