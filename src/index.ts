@@ -130,7 +130,7 @@ export function apply(ctx: Context, config: Configuration) {
     };
     register({
       name: 'aria2_download',
-      description: '向已有 aria2 服务提交单文件直链下载，立即返回 GID；不等待完成。文件保存在 aria2 所在机器。只有下载源明确提供校验和时才填写 checksum，哈希由 aria2 计算。创建需完全访问模式。结果未知时先用 GID 查状态，不要重复提交。任务完成或失败时，插件会向发起会话推送通知。',
+      description: '向正在运行的 aria2 rpc 服务提交单文件下载链接，立刻返回 GID。不等待完成。文件保存在aria2 rpc所在设备。当下载源明确提供校验和时填写 checksum 参数。结果未知时先用 GID 查状态，不要重复提交。任务完成或失败时，插件会向发起会话推送通知。',
       parameters: schema({
         url: { type: 'string', description: 'HTTP/HTTPS 文件直链，不允许内嵌用户名和密码。' },
         directory: { type: 'string', description: 'aria2 所在机器的绝对目录；省略使用其默认目录。' },
@@ -152,7 +152,7 @@ export function apply(ctx: Context, config: Configuration) {
     });
     register({
       name: 'aria2_control',
-      description: '暂停、恢复或取消当前 RPC 服务中的任务。取消保留部分文件，不关闭 aria2；恢复仅适用于暂停任务。需完全访问模式。动作被接受后可查状态确认，结果未知时不盲目重试。',
+      description: '暂停、恢复或取消当前 RPC 服务中的任务。取消不会删除文件、不关闭 aria2；恢复仅适用于暂停任务。动作被接受后可查状态确认，结果未知时不盲目重试。',
       parameters: schema({ gid: gidSchema, action: { type: 'string', enum: ['pause', 'resume', 'cancel'] } }, ['gid', 'action']),
       execute: (args, exec) => run('control', args, exec),
     });
