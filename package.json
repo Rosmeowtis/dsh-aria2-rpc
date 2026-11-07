@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Control an existing aria2 JSON-RPC service from DSH. No bundled downloader.",
   "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/Rosmeowtis/dsh-aria2-rpc.git" },
   "type": "module",
   "main": "./lib/src/index.js",
   "types": "./lib/src/index.d.ts",
