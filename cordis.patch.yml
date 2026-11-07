@@ -1,0 +1,3 @@
+- insert:
+    - id: aria2-rpc
+      name: dsh-aria2-rpc
