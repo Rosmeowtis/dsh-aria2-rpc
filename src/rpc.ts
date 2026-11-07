@@ -55,6 +55,33 @@ export interface Aria2StatusResult {
   errorCode: string;
   error: string | null;
 }
+export type Aria2ListState = 'active' | 'waiting' | 'stopped' | 'all';
+export interface Aria2ListArgs {
+  state?: Aria2ListState;
+  limit?: number;
+  offset?: number;
+}
+export interface Aria2TaskSummary {
+  gid: string;
+  status: Aria2StatusResult['status'];
+  totalBytes: string;
+  completedBytes: string;
+  downloadSpeed: string;
+  connections: string;
+  directory: string;
+  file: string | null;
+  progress: number | null;
+  errorCode: string;
+  error: string | null;
+}
+export interface Aria2ListResult {
+  state: Aria2ListState;
+  offset: number;
+  limit: number;
+  active?: Aria2TaskSummary[];
+  waiting?: Aria2TaskSummary[];
+  stopped?: Aria2TaskSummary[];
+}
 export type Aria2MutateResult<T> = ({ outcome: 'ok' } & T)
   | ({ outcome: 'unknown_effect'; code: 'UNKNOWN_EFFECT'; reason: string } & T);
 export type Aria2DownloadResult = Aria2MutateResult<{ gid: string }>;
@@ -63,6 +90,7 @@ export interface Aria2Client {
   version(opts?: { signal?: AbortSignal }): Promise<{ version: string }>;
   download(args: Aria2DownloadArgs, opts?: { signal?: AbortSignal }): Promise<Aria2DownloadResult>;
   status(args: Aria2StatusArgs, opts?: { signal?: AbortSignal }): Promise<Aria2StatusResult>;
+  list(args: Aria2ListArgs, opts?: { signal?: AbortSignal }): Promise<Aria2ListResult>;
   control(args: Aria2ControlArgs, opts?: { signal?: AbortSignal }): Promise<Aria2ControlResult>;
 }
 
@@ -214,6 +242,30 @@ function statusResult(value: unknown, gid: string): Aria2StatusResult {
       : errorCode === '13' ? 'File already exists' : 'Download failed',
   };
 }
+function taskSummary(status: Aria2StatusResult): Aria2TaskSummary {
+  return {
+    gid: status.gid, status: status.status, totalBytes: status.totalBytes, completedBytes: status.completedBytes,
+    downloadSpeed: status.downloadSpeed, connections: status.connections, directory: status.directory,
+    file: status.files[0]?.path ?? null, progress: status.progress, errorCode: status.errorCode, error: status.error,
+  };
+}
+function listItem(value: unknown): Aria2StatusResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) fail('BAD_RESPONSE', 'aria2 returned an invalid task entry');
+  const gid = (value as Record<string, unknown>).gid;
+  return statusResult(value, gidValue(gid));
+}
+function listItems(value: unknown): Aria2StatusResult[] {
+  if (!Array.isArray(value)) fail('BAD_RESPONSE', 'aria2 returned an invalid task list');
+  return value.map(listItem);
+}
+function offsetValue(value: unknown): number {
+  if (value === undefined) return 0;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 1_000_000) {
+    fail('INVALID_INPUT', 'offset: expected integer 0..1000000');
+  }
+  return value;
+}
+
 function mutationFailure<T>(error: unknown, data: T): Aria2MutateResult<T> {
   if (error instanceof Aria2Error && error.requestSent && error.code !== 'RPC_ERROR') {
     return { ...data, outcome: 'unknown_effect', code: 'UNKNOWN_EFFECT', reason: error.code };
@@ -314,6 +366,28 @@ export function createAria2Client(config: Aria2ClientConfig): Aria2Client {
     async status(args, opts) {
       const gid = gidValue(fields(args, ['gid'], 'status args').gid);
       return statusResult(await rpc('aria2.tellStatus', [gid, STATUS_KEYS], signalFor(opts)), gid);
+    },
+    async list(args, opts) {
+      const a = fields(args, ['state', 'limit', 'offset'], 'list args');
+      const state = a.state === undefined ? 'all' : a.state;
+      if (state !== 'active' && state !== 'waiting' && state !== 'stopped' && state !== 'all') {
+        fail('INVALID_INPUT', 'state: expected active, waiting, stopped or all');
+      }
+      const limit = a.limit === undefined ? 20 : integer(a.limit, 'limit', 100);
+      const offset = offsetValue(a.offset);
+      const signal = signalFor(opts);
+      const result: Aria2ListResult = { state, offset, limit };
+      if (state === 'active' || state === 'all') {
+        const active = listItems(await rpc('aria2.tellActive', [STATUS_KEYS], signal)).map(taskSummary);
+        result.active = active.slice(offset, offset + limit);
+      }
+      if (state === 'waiting' || state === 'all') {
+        result.waiting = listItems(await rpc('aria2.tellWaiting', [offset, limit, STATUS_KEYS], signal)).map(taskSummary);
+      }
+      if (state === 'stopped' || state === 'all') {
+        result.stopped = listItems(await rpc('aria2.tellStopped', [offset, limit, STATUS_KEYS], signal)).map(taskSummary);
+      }
+      return result;
     },
     async control(args, opts) {
       const a = fields(args, ['gid', 'action'], 'control args');

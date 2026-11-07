@@ -92,11 +92,11 @@ export function apply(ctx: Context, config: Configuration) {
           schema: { type: 'object', additionalProperties: true },
           render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }],
         },
-        presentCall: () => ({ card: 'generic', title: definition.name, kind: definition.name === 'aria2_status' ? 'read' : 'execute' }),
+        presentCall: () => ({ card: 'generic', title: definition.name, kind: definition.name === 'aria2_status' || definition.name === 'aria2_list' ? 'read' : 'execute' }),
       }));
     };
-    const run = async (method: 'download' | 'status' | 'control', args: unknown, exec: Parameters<ToolDefinition['execute']>[1]) => {
-      if (method !== 'status') {
+    const run = async (method: 'download' | 'status' | 'list' | 'control', args: unknown, exec: Parameters<ToolDefinition['execute']>[1]) => {
+      if (method !== 'status' && method !== 'list') {
         const agent = exec.agent && ctx.agents.get(exec.agent.id);
         const plan = agent?.ctx.get('planMode');
         if (!agent || plan?.get(agent).active || plan?.get(agent).pending === true || ctx.sandboxPolicy.resolve({ session: agent.session }).mode !== 'danger-full-access') {
@@ -149,6 +149,17 @@ export function apply(ctx: Context, config: Configuration) {
       parameters: schema({ gid: gidSchema }, ['gid']),
       isConcurrencySafe: () => true,
       execute: (args, exec) => run('status', args, exec),
+    });
+    register({
+      name: 'aria2_list',
+      description: '列出当前 RPC 服务中的任务：active、waiting、stopped 或全部。只读，不创建或修改任务。limit 限制每个分类的数量；offset 用于 waiting/stopped 分页，active 在本地按相同范围截取。',
+      parameters: schema({
+        state: { type: 'string', enum: ['active', 'waiting', 'stopped', 'all'], default: 'all', description: '要查看的任务分类；默认 all。' },
+        limit: { type: 'integer', minimum: 1, maximum: 100, default: 20, description: '每个分类最多返回多少条。' },
+        offset: { type: 'integer', minimum: 0, maximum: 1000000, default: 0, description: '跳过前面的任务；用于 waiting/stopped 分页。' },
+      }, []),
+      isConcurrencySafe: () => true,
+      execute: (args, exec) => run('list', args, exec),
     });
     register({
       name: 'aria2_control',

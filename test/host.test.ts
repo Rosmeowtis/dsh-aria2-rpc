@@ -32,10 +32,10 @@ function mount(mode = 'read-only', plan = false, credentialAvailable = false) {
   return { definitions, rpcCalls: () => rpcCalls, dispose: () => { for (const dispose of disposers.reverse()) dispose(); } };
 }
 
-test('three exact tool names and lifecycle cleanup', () => {
+test('four exact tool names and lifecycle cleanup', () => {
   const plugin = mount();
-  assert.deepEqual([...plugin.definitions.keys()], ['aria2_download', 'aria2_status', 'aria2_control']);
-  assert.equal(plugin.definitions.get('aria2_status')?.isConcurrencySafe?.({}), true);
+  assert.deepEqual([...plugin.definitions.keys()], ['aria2_download', 'aria2_status', 'aria2_list', 'aria2_control']);
+  for (const name of ['aria2_status', 'aria2_list']) assert.equal(plugin.definitions.get(name)?.isConcurrencySafe?.({}), true);
   assert.equal(plugin.definitions.get('aria2_download')?.isConcurrencySafe?.({}), undefined);
   plugin.dispose();
   assert.equal(plugin.definitions.size, 0);
@@ -53,12 +53,14 @@ test('read-only and plan mode block mutations before credentials or RPC', async 
   }
 });
 
-test('credential failures are redacted, status remains available', async () => {
+test('credential failures are redacted, status and list remain available', async () => {
   const plugin = mount();
-  const result = await plugin.definitions.get('aria2_status')!.execute({ gid: '1234567890abcdef' }, { signal: new AbortController().signal } as never);
-  assert.equal((result as { error: { code: string } }).error.code, 'CONFIG_OR_CREDENTIAL_ERROR');
-  assert.equal(plugin.rpcCalls(), 1);
-  assert.doesNotMatch(JSON.stringify(result), /not configured/);
+  for (const [name, args] of [['aria2_status', { gid: '1234567890abcdef' }], ['aria2_list', {}]] as const) {
+    const result = await plugin.definitions.get(name)!.execute(args, { signal: new AbortController().signal } as never);
+    assert.equal((result as { error: { code: string } }).error.code, 'CONFIG_OR_CREDENTIAL_ERROR');
+    assert.doesNotMatch(JSON.stringify(result), /not configured/);
+  }
+  assert.equal(plugin.rpcCalls(), 2);
   plugin.dispose();
 });
 

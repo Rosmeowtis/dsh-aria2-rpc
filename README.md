@@ -1,12 +1,15 @@
 # dsh-aria2-rpc
 
-DSH 插件：连接**已有的 aria2 JSON-RPC 服务**（HTTP，`/jsonrpc`），为模型提供三个工具。不携带、不启动、不管理 aria2。
+DSH 插件：连接**已有的 aria2 JSON-RPC 服务**（HTTP，`/jsonrpc`），为模型提供四个工具。不携带、不启动、不管理 aria2。
 
 | 工具 | 作用 |
 | --- | --- |
 | `aria2_download` | 提交单文件直链下载，立即返回 GID；可选保存目录、文件名、来源提供的校验和（sha-256 / sha-1 / md5，实际计算由 aria2 执行）、任务级 HTTP 代理。 |
 | `aria2_status` | 读取任务状态、进度、速度、文件路径与脱敏错误。 |
+| `aria2_list` | 列出 active / waiting / stopped 或全部任务；只读，支持 limit/offset。 |
 | `aria2_control` | `pause` / `resume` / `cancel`。取消保留部分文件，不关闭 aria2。 |
+
+> 工具定义的上下文占用： ~400 token。
 
 配置：设置 → 插件 → Aria2 RPC，可设置 `rpcHost`、`rpcPort`、密钥与请求超时；密钥固定使用凭据 `ARIA2_RPC_SECRET`，无密钥时不发送；HTTP 不加密，远程连接请仅在可信网络或加密隧道中使用。
 

@@ -162,6 +162,43 @@ test('unknown progress, status shapes and fixed unknown-error summary', async (t
   }
 });
 
+test('list reads active/waiting/stopped with compact summaries, paging and secret', async (t) => {
+  const seen: { method: string; params: unknown[] }[] = [];
+  const { client } = await mock(t, (req, res) => {
+    seen.push({ method: req.method, params: req.params });
+    const base = validStatus();
+    if (req.method === 'aria2.tellActive') reply(res, req, [
+      { ...base, gid: '0123456789abcdef' },
+      { ...base, gid: '1123456789abcdef' },
+    ]);
+    else reply(res, req, [{ ...base, gid: '2123456789abcdef', status: 'complete' }]);
+  }, { secret: 'top-secret' });
+
+  const all = await client.list({ limit: 1, offset: 1 });
+  assert.equal(all.state, 'all');
+  assert.equal(all.limit, 1);
+  assert.equal(all.offset, 1);
+  assert.deepEqual(all.active?.map(task => task.gid), ['1123456789abcdef']);
+  assert.deepEqual(all.waiting?.map(task => task.gid), ['2123456789abcdef']);
+  assert.deepEqual(all.stopped?.map(task => task.status), ['complete']);
+  assert.equal(all.waiting?.[0].file, '/remote/downloads/file');
+  assert.equal('files' in all.waiting![0], false);
+  assert.deepEqual(seen.map(entry => entry.method), ['aria2.tellActive', 'aria2.tellWaiting', 'aria2.tellStopped']);
+  for (const entry of seen) assert.equal(entry.params[0], 'token:top-secret');
+  assert.ok(Array.isArray(seen[0].params[1]));
+  assert.deepEqual(seen[1].params.slice(1, 3), [1, 1]);
+  assert.deepEqual(seen[2].params.slice(1, 3), [1, 1]);
+
+  const waiting = await client.list({ state: 'waiting', limit: 5, offset: 0 });
+  assert.equal(waiting.active, undefined);
+  assert.equal(waiting.stopped, undefined);
+  assert.deepEqual(waiting.waiting?.map(task => task.gid), ['2123456789abcdef']);
+
+  for (const args of [{ state: 'bad' }, { limit: 0 }, { limit: 101 }, { limit: 1.5 }, { offset: -1 }, { offset: 1.5 }, { offset: 1000001 }, { extra: 1 }]) {
+    await assert.rejects(client.list(args as never), isCode('INVALID_INPUT'), JSON.stringify(args));
+  }
+});
+
 test('control maps only pause/unpause/remove, returns queryable gid and never forces or deletes', async (t) => {
   const { client, requests } = await mock(t, (req, res) => reply(res, req, GID));
   for (const action of ['pause', 'resume', 'cancel'] as const) {
