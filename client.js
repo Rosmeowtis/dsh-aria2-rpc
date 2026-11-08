@@ -1,5 +1,5 @@
 window.__ModuleLoader__.load({
-  id: 'dsh-aria2-rpc',
+  id: '@rosmeowtis/dsh-aria2-rpc',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
@@ -184,7 +184,7 @@ window.__ModuleLoader__.load({
               notice && h('p', { role: failed ? 'alert' : 'status', className: `aria2-rpc-note${failed ? ' aria2-rpc-error' : ''}` }, notice),
             );
           }
-          ready.slots.inject('plugins.bundle.config', () => ready.slots.register({ name: 'plugins.bundle.config', key: 'dsh-aria2-rpc' }, Settings));
+          ready.slots.inject('plugins.bundle.config', () => ready.slots.register({ name: 'plugins.bundle.config', key: '@rosmeowtis/dsh-aria2-rpc' }, Settings));
         });
       },
     };
