@@ -1,4 +1,4 @@
-# dsh-aria2-rpc
+# @rosmeowtis/dsh-aria2-rpc
 
 DSH 插件：连接**已有的 aria2 JSON-RPC 服务**（HTTP，`/jsonrpc`），为模型提供四个工具。不携带、不启动、不管理 aria2。
 
