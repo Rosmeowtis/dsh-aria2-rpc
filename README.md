@@ -36,7 +36,7 @@ GitHub 渠道（跟仓库 HEAD，用于先于发布验证）：
 dsh plugin --profile web add github:Rosmeowtis/dsh-aria2-rpc
 ```
 
-git 依赖靠 `prepare` 脚本在安装时构建，而 pnpm 默认拦截构建脚本：首次安装会失败并打印一个 `allowBuilds` key，把它写进该 profile 的 `pnpm-workspace.yaml` 后重跑同一条命令。
+git 依赖靠 `prepare` 脚本在安装时构建，而 pnpm 默认拦截构建脚本：首次安装会失败并打印一个 `allowBuilds` key，把它写进该 profile 的 `pnpm-workspace.yaml` 后重跑同一条命令。key 里带 commit，仓库有新提交后要按新打印的 key 重新放行。
 
 本地开发：`npm run build` 后在本目录执行 `dsh plugin --profile web add .`。
 
