@@ -19,11 +19,30 @@ DSH 插件：连接**已有的 aria2 JSON-RPC 服务**（HTTP，`/jsonrpc`），
 
 创建与控制仅在退出计划模式后的完全访问模式执行；状态读取不受此限。结果未知的修改请求会返回可查询的 GID，不会自动重复提交。
 
+## 安装
+
+以 `web` 预设举例。装完必须重启该 profile（`dsh web`）：bundle 层在启动时组装。
+
+npm 渠道（版本受控）：
+
+```sh
+dsh plugin --profile web add @rosmeowtis/dsh-aria2-rpc
+dsh web
+```
+
+GitHub 渠道（跟仓库 HEAD，用于先于发布验证）：
+
+```sh
+dsh plugin --profile web add github:Rosmeowtis/dsh-aria2-rpc
+```
+
+git 依赖靠 `prepare` 脚本在安装时构建，而 pnpm 默认拦截构建脚本：首次安装会失败并打印一个 `allowBuilds` key，把它写进该 profile 的 `pnpm-workspace.yaml` 后重跑同一条命令。
+
+本地开发：`npm run build` 后在本目录执行 `dsh plugin --profile web add .`。
+
 ## 开发
 
 ```sh
 npm install
 npm test   # 构建 + 语法检查 + 模拟 RPC 单元测试（不真实下载）
 ```
-
-安装到当前 profile：DSH 的插件管理 `install_bundle`，target 为本目录绝对路径。
