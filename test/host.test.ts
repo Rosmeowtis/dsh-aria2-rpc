@@ -6,16 +6,17 @@ import { apply, Config } from '../src/index.js';
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
 
 // Exercise the actual registered definitions without mounting or changing a profile.
-function mount(mode = 'read-only', plan = false, config: Record<string, unknown> = {}) {
+function mount(config: Record<string, unknown> = {}) {
   const definitions = new Map<string, ToolDefinition>();
   let credentialAccesses = 0;
   const disposers: (() => void)[] = [];
-  const agent = { id: 'test', session: {}, ctx: { get: () => ({ get: () => ({ active: plan }) }) } };
+  const agent = { id: 'test' };
   const ctx = {
     fiber: {},
     inject: (keys: string[], callback: (ctx: unknown) => void) => {
-      // The plugin stores its RPC secret in its own configuration, never in the credential store.
+      // The plugin stores its RPC secret in its own configuration and never gates work on the sandbox.
       assert.ok(!keys.includes('credentials'), 'the plugin must not inject the credential service');
+      assert.ok(!keys.includes('sandboxPolicy'), 'the plugin must not gate aria2 work on the sandbox policy');
       if (keys.includes('connection')) callback({
         effect: (fn: () => () => void) => { disposers.push(fn()); },
         connection: { fetch: { register: (route: { path: string; methods: string[]; fetch: (request: Request) => Promise<Response> }) => {
@@ -31,7 +32,6 @@ function mount(mode = 'read-only', plan = false, config: Record<string, unknown>
     effect: (fn: () => () => void) => { disposers.push(fn()); },
     tools: { register: (tool: ToolDefinition) => { definitions.set(tool.name, tool); return () => { definitions.delete(tool.name); }; } },
     agents: { get: () => agent },
-    sandboxPolicy: { resolve: () => ({ mode }) },
   };
   Object.defineProperty(ctx, 'credentials', { get: () => { credentialAccesses++; throw new Error('credential store accessed'); } });
   apply(ctx as unknown as Context, Config(config));
@@ -54,27 +54,31 @@ test('four exact tool names and lifecycle cleanup', () => {
   assert.equal(plugin.definitions.size, 0);
 });
 
-test('read-only, workspace-write and plan mode block mutations before any RPC request', async () => {
+test('download and control are submitted without consulting the sandbox or plan mode', async () => {
   const previous = globalThis.fetch;
-  let fetches = 0;
-  globalThis.fetch = async () => { fetches++; throw new Error('unexpected request'); };
+  const calls: { method: string; params: unknown[] }[] = [];
+  globalThis.fetch = async (_url, options) => {
+    const payload = JSON.parse(String(options?.body));
+    calls.push({ method: payload.method, params: payload.params });
+    const result = payload.method === 'aria2.addUri'
+      ? payload.params[1][0].gid
+      : payload.method === 'aria2.remove' || payload.method === 'aria2.pause'
+        ? payload.params[1]
+        : payload.params[0];
+    return Response.json({ jsonrpc: '2.0', id: payload.id, result });
+  };
   try {
-    for (const [mode, plan] of [['read-only', false], ['workspace-write', false], ['danger-full-access', true]] as const) {
-      const plugin = mount(mode, plan);
-      for (const name of ['aria2_download', 'aria2_control']) {
-        const result = await plugin.definitions.get(name)!.execute(
-          { url: 'https://example.com/file', gid: '1234567890abcdef', action: 'pause' },
-          { agent: { id: 'test' }, signal: new AbortController().signal } as never,
-        );
-        const error = (result as { error: { code: string; message: string } }).error;
-        assert.equal(error.code, 'PERMISSION_DENIED');
-        assert.match(error.message, /未发送 RPC/);
-      }
-      assert.equal(plugin.credentialAccesses(), 0);
-      plugin.dispose();
+    const plugin = mount({ rpcSecret: 'config-secret' });
+    for (const [name, args] of [
+      ['aria2_download', { url: 'https://example.com/file' }],
+      ['aria2_control', { gid: '1234567890abcdef', action: 'pause' }],
+    ] as const) {
+      const result = await plugin.definitions.get(name)!.execute(args, { agent: { id: 'test' }, signal: new AbortController().signal } as never);
+      assert.equal((result as { ok: boolean }).ok, true);
     }
-    // The guard runs before any client is built: a denied mutation never reaches aria2.
-    assert.equal(fetches, 0);
+    assert.deepEqual(calls.map((call) => call.method), ['aria2.addUri', 'aria2.pause']);
+    assert.equal(plugin.credentialAccesses(), 0);
+    plugin.dispose();
   } finally { globalThis.fetch = previous; }
 });
 
@@ -87,7 +91,7 @@ test('the configured secret is sent as the aria2 token and the credential store 
     return Response.json({ ...tellStatus('1234567890abcdef'), id: payload.id });
   };
   try {
-    const withSecret = mount('danger-full-access', false, { rpcSecret: 'config-secret' });
+    const withSecret = mount({ rpcSecret: 'config-secret' });
     const status = await withSecret.definitions.get('aria2_status')!.execute({ gid: '1234567890abcdef' }, { signal: new AbortController().signal } as never);
     assert.equal((status as { ok: boolean }).ok, true);
     assert.deepEqual(calls[0], { method: 'aria2.tellStatus', params: ['token:config-secret', '1234567890abcdef', [
@@ -96,14 +100,14 @@ test('the configured secret is sent as the aria2 token and the credential store 
     assert.equal(withSecret.credentialAccesses(), 0);
     withSecret.dispose();
 
-    const withoutSecret = mount('danger-full-access', false);
+    const withoutSecret = mount();
     await withoutSecret.definitions.get('aria2_status')!.execute({ gid: '1234567890abcdef' }, { signal: new AbortController().signal } as never);
     assert.deepEqual(calls[1].params.slice(0, 1), ['1234567890abcdef']);
     assert.equal(withoutSecret.credentialAccesses(), 0);
     withoutSecret.dispose();
 
     // An empty configured value means "no token", never an empty token.
-    const emptySecret = mount('danger-full-access', false, { rpcSecret: '' });
+    const emptySecret = mount({ rpcSecret: '' });
     await emptySecret.definitions.get('aria2_status')!.execute({ gid: '1234567890abcdef' }, { signal: new AbortController().signal } as never);
     assert.deepEqual(calls[2].params.slice(0, 1), ['1234567890abcdef']);
     emptySecret.dispose();
@@ -126,7 +130,7 @@ test('RPC failures are redacted, status and list remain available', async () => 
 });
 
 test('cancelled mutation retains queryable gid in thrown tool failure', async () => {
-  const plugin = mount('danger-full-access', false, { rpcSecret: 'config-secret' });
+  const plugin = mount({ rpcSecret: 'config-secret' });
   const controller = new AbortController();
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => { controller.abort(); throw new Error('private endpoint'); };

@@ -58,8 +58,6 @@
     "@deepseek-ai/dsh-agent": "0.2.1-rc.5",
     "@deepseek-ai/dsh-client-connection": "0.2.1-rc.5",
     "@deepseek-ai/dsh-llm": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-plan-mode": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-sandbox-policy": "0.2.1-rc.5",
     "@deepseek-ai/dsh-settings": "0.2.1-rc.5",
     "@deepseek-ai/dsh-tools": "0.2.1-rc.5",
     "@types/node": "^22.0.0",

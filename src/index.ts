@@ -2,8 +2,6 @@ import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import type {} from '@deepseek-ai/dsh-agent';
 import type {} from '@deepseek-ai/dsh-settings';
-import type {} from '@deepseek-ai/dsh-sandbox-policy';
-import type {} from '@deepseek-ai/dsh-plan-mode';
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { Aria2Error, createAria2Client } from './rpc.js';
@@ -12,7 +10,7 @@ import { testConnection } from './connection-test.js';
 import { describeCompletion, startAria2Events, type CompletionNotice } from './events.js';
 
 export const name = 'aria2-rpc';
-export const inject = ['tools', 'sandboxPolicy', 'agents'];
+export const inject = ['tools', 'agents'];
 
 export const Config = z.object({
   // Settings schemas cross to the browser: use serializable constraints, never Node callbacks.
@@ -97,13 +95,6 @@ export function apply(ctx: Context, config: Configuration) {
       }));
     };
     const run = async (method: 'download' | 'status' | 'list' | 'control', args: unknown, exec: Parameters<ToolDefinition['execute']>[1]) => {
-      if (method !== 'status' && method !== 'list') {
-        const agent = exec.agent && ctx.agents.get(exec.agent.id);
-        const plan = agent?.ctx.get('planMode');
-        if (!agent || plan?.get(agent).active || plan?.get(agent).pending === true || ctx.sandboxPolicy.resolve({ session: agent.session }).mode !== 'danger-full-access') {
-          return { ok: false, error: { code: 'PERMISSION_DENIED', message: '创建和控制下载仅允许在退出计划模式后的完全访问模式执行；未发送 RPC。' } };
-        }
-      }
       try {
         const rpcHost = config.rpcHost.get();
         const rpcPort = config.rpcPort.get();
