@@ -1,6 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
-import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import type {} from '@deepseek-ai/dsh-agent';
 import type {} from '@deepseek-ai/dsh-settings';
 import type {} from '@deepseek-ai/dsh-sandbox-policy';
@@ -13,13 +12,14 @@ import { testConnection } from './connection-test.js';
 import { describeCompletion, startAria2Events, type CompletionNotice } from './events.js';
 
 export const name = 'aria2-rpc';
-export const inject = ['tools', 'credentials', 'sandboxPolicy', 'agents'];
+export const inject = ['tools', 'sandboxPolicy', 'agents'];
 
 export const Config = z.object({
   // Settings schemas cross to the browser: use serializable constraints, never Node callbacks.
   rpcHost: z.string().pattern(/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.?$/i).default('127.0.0.1').volatile(),
   rpcPort: z.natural().min(1).max(65535).default(6800).volatile(),
-  rpcSecretRef: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/).role('credential-ref').default('ARIA2_RPC_SECRET').volatile(),
+  // Stored in this plugin's own configuration; never in the DSH credential store.
+  rpcSecret: z.string().max(4096).role('secret').volatile(),
   rpcTimeoutMs: z.natural().min(1).max(60000).default(10000).volatile(),
 });
 
@@ -28,13 +28,15 @@ const gidSchema = { type: 'string', pattern: '^[0-9a-fA-F]{16}$', description: '
 const schema = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', properties, required, additionalProperties: false });
 
 export function apply(ctx: Context, config: Configuration) {
+  // An empty configured value means "no token", not an empty token.
+  const secretValue = (): string | undefined => config.rpcSecret.get() || undefined;
   ctx.inject(['connection'], ready => {
     const lifetime = new AbortController();
     ready.effect(() => () => lifetime.abort());
     // Connection owns browser authentication and Host/Origin checks for /api routes.
     ready.connection.fetch.register({
       path: '/api/aria2-rpc.test', methods: ['POST'], requestBody: 'buffered',
-      fetch: request => testConnection(request, async ref => (await ready.credentials.resolve(credentialRef(ref)))?.value, lifetime.signal),
+      fetch: request => testConnection(request, secretValue, lifetime.signal),
     });
   });
   ctx.inject(['settings'], ready => {
@@ -49,8 +51,7 @@ export function apply(ctx: Context, config: Configuration) {
     const notify = async (sessionId: string, notice: CompletionNotice): Promise<void> => {
       const agent = ctx.agents.get(sessionId as never);
       if (!agent) return;
-      let secret: string | undefined;
-      try { secret = (await ctx.credentials.resolve(credentialRef(config.rpcSecretRef.get())))?.value; } catch { /* no credential: still push */ }
+      const secret = secretValue();
       const text = await describeCompletion(notice, {
         host: config.rpcHost.get(), port: config.rpcPort.get(), timeoutMs: config.rpcTimeoutMs.get(), secret, signal: lifetime.signal,
       });
@@ -107,8 +108,7 @@ export function apply(ctx: Context, config: Configuration) {
         const rpcHost = config.rpcHost.get();
         const rpcPort = config.rpcPort.get();
         const timeoutMs = config.rpcTimeoutMs.get();
-        const ref = config.rpcSecretRef.get();
-        const secret = (await ctx.credentials.resolve(credentialRef(ref)))?.value;
+        const secret = secretValue();
         const client = createAria2Client({ rpcHost, rpcPort, timeoutMs, secret, signal: lifetime.signal });
         // Each boundary validates unknown input again; schemas are discovery, not enforcement.
         const value = await client[method](args as never, { signal: exec.signal });
@@ -125,7 +125,7 @@ export function apply(ctx: Context, config: Configuration) {
         }
         return { ok: true, ...value };
       } catch (error) {
-        return { ok: false, error: { code: error instanceof Aria2Error ? error.code : 'CONFIG_OR_CREDENTIAL_ERROR', message: error instanceof Aria2Error ? error.message : '配置或凭据不可用，请检查插件设置。' } };
+        return { ok: false, error: { code: error instanceof Aria2Error ? error.code : 'CONFIG_ERROR', message: error instanceof Aria2Error ? error.message : '插件配置不可用，请检查插件设置。' } };
       }
     };
     register({

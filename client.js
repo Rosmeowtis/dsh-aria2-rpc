@@ -11,17 +11,16 @@ window.__ModuleLoader__.load({
         save: '保存连接设置', saving: '保存中…', saved: '连接设置已保存。',
         rejected: '保存失败或配置已在别处变更。草稿已保留；请重新打开页面核对后再保存。',
         readOnly: '配置不可用或当前连接不允许写入。',
-        secret: 'RPC 密钥', configured: '已配置', missing: '未配置', unknown: '状态未知',
-        secretHint: '仅写入 DSH 凭据存储，不回显原值；留空不改变。清除存储值后，环境变量等来源仍可能生效。',
-        saveSecret: '保存密钥', clearSecret: '清除存储的密钥', secretSaved: '密钥操作已完成。',
-        secretFailed: '凭据操作失败，请检查连接权限；已保存的设置不受影响。',
+        secret: 'RPC 密钥', configured: '已配置', missing: '未配置',
+        secretHint: '只保存在本插件配置中，不回显原值；留空保持已保存的密钥不变。',
+        clearSecret: '清除密钥', secretCleared: '已清除保存的密钥。',
         details: '连接现有 aria2 RPC 服务，不自带 aria2，提供创建、查询、暂停、恢复、取消功能。',
         test: '测试连接', testing: '测试中…', connected: '连接成功，aria2 版本：',
         testFailed: '测试失败：', NETWORK: '无法连接，请检查主机、端口及防火墙。', TIMEOUT: '请求超时。',
         RPC_ERROR: 'RPC 拒绝请求，请检查密钥及服务配置。', HTTP_ERROR: 'HTTP 响应异常，请检查 RPC 端口。',
-        INVALID_INPUT: '主机、端口或超时格式不正确。', BAD_RESPONSE: '响应不是有效的 aria2 RPC 版本信息。',
+        INVALID_INPUT: '主机、端口、超时或密钥格式不正确。', BAD_RESPONSE: '响应不是有效的 aria2 RPC 版本信息。',
         REDIRECT: 'RPC 地址发生重定向，已拒绝。', RESPONSE_TOO_LARGE: 'RPC 响应过大。', ABORTED: '测试已取消。',
-        CREDENTIAL_ERROR: '无法读取凭据。', TRANSPORT_ERROR: '无法调用 DSH 测试接口，请刷新页面重试。',
+        CONFIG_ERROR: '无法读取插件配置。', TRANSPORT_ERROR: '无法调用 DSH 测试接口，请刷新页面重试。',
       },
       en: {
         host: 'RPC host', port: 'RPC port', timeout: 'Request timeout (ms)',
@@ -29,17 +28,16 @@ window.__ModuleLoader__.load({
         save: 'Save connection settings', saving: 'Saving…', saved: 'Connection settings saved.',
         rejected: 'Save failed or settings changed elsewhere. Your draft was kept; reopen this page to review before saving again.',
         readOnly: 'Settings are unavailable or this connection is read-only.',
-        secret: 'RPC secret', configured: 'Configured', missing: 'Not configured', unknown: 'Unknown',
-        secretHint: 'Written only to DSH credentials, never read back. Blank keeps it unchanged. Environment values may still apply after removing the stored secret.',
-        saveSecret: 'Save secret', clearSecret: 'Remove stored secret', secretSaved: 'Credential operation completed.',
-        secretFailed: 'Credential operation failed. Check connection permissions; saved settings are unaffected.',
+        secret: 'RPC secret', configured: 'Configured', missing: 'Not configured',
+        secretHint: 'Stored in this plugin configuration only, never read back. Leave blank to keep the saved secret.',
+        clearSecret: 'Remove secret', secretCleared: 'The saved secret was removed.',
         details: 'Connects to an existing aria2 RPC service without bundling aria2; provides create, query, pause, resume, and cancel.',
         test: 'Test connection', testing: 'Testing…', connected: 'Connected, aria2 version: ',
         testFailed: 'Connection test failed: ', NETWORK: 'Cannot connect. Check host, port and firewall.', TIMEOUT: 'Request timed out.',
         RPC_ERROR: 'RPC rejected the request. Check the secret and service configuration.', HTTP_ERROR: 'Unexpected HTTP response. Check the RPC port.',
-        INVALID_INPUT: 'Invalid host, port or timeout.', BAD_RESPONSE: 'Not a valid aria2 RPC version response.',
+        INVALID_INPUT: 'Invalid host, port, timeout or secret.', BAD_RESPONSE: 'Not a valid aria2 RPC version response.',
         REDIRECT: 'RPC redirect rejected.', RESPONSE_TOO_LARGE: 'RPC response is too large.', ABORTED: 'Test cancelled.',
-        CREDENTIAL_ERROR: 'Cannot read the credential.', TRANSPORT_ERROR: 'Cannot call the DSH test endpoint. Refresh and retry.',
+        CONFIG_ERROR: 'Cannot read the plugin configuration.', TRANSPORT_ERROR: 'Cannot call the DSH test endpoint. Refresh and retry.',
       },
     };
     const css = `
@@ -69,15 +67,26 @@ window.__ModuleLoader__.load({
       @media(max-width:520px){.aria2-rpc-form .aria2-rpc-pair{grid-template-columns:1fr}}
     `;
     return {
-      inject: ['slots', 'locale', 'remote', 'remote.credentials'],
+      inject: ['slots', 'locale'],
       apply(ctx) {
         for (const [lang, dictionary] of Object.entries(dictionaries)) ctx.effect(() => ctx.locale.register(NS, lang, dictionary));
         const t = ctx.locale.bind(NS);
         ctx.inject(['configForms'], ready => {
           const form = ready.configForms.get('aria2-rpc');
+          // Presence of the write-only secret, read from the redacted settings view.
+          const describe = typeof ready.configForms.describe === 'function' ? ready.configForms.describe() : undefined;
+          const secretSet = snapshot => {
+            const namespaces = snapshot && snapshot.view && Array.isArray(snapshot.view.namespaces) ? snapshot.view.namespaces : [];
+            const view = namespaces.find(entry => entry.ns === 'aria2-rpc');
+            if (!view || !Array.isArray(view.secrets)) return undefined;
+            return view.secrets.some(secret => Array.isArray(secret.path) && secret.path.length === 1 && secret.path[0] === 'rpcSecret' && secret.set === true);
+          };
           function Settings() {
             React.useSyncExternalStore(fn => ctx.locale.subscribe(fn), () => ctx.locale.getSnapshot());
             const state = React.useSyncExternalStore(fn => form.subscribe(fn), () => form.getSnapshot());
+            const view = React.useSyncExternalStore(
+              fn => (describe ? describe.subscribe(fn) : () => {}),
+              () => (describe ? describe.getSnapshot() : null));
             const [draft, setDraft] = React.useState(null);
             const [busy, setBusy] = React.useState(false);
             const [testing, setTesting] = React.useState(false);
@@ -87,48 +96,35 @@ window.__ModuleLoader__.load({
             const [notice, setNotice] = React.useState('');
             const [failed, setFailed] = React.useState(false);
             const [secret, setSecret] = React.useState('');
-            const [credential, setCredential] = React.useState(null);
             const values = state.value || {};
-            const ref = values.rpcSecretRef || 'ARIA2_RPC_SECRET';
             const writable = state.status === 'ready' && state.writable;
             const disabled = busy || !writable;
-            const remote = () => ctx.remote.credentials;
-            const refreshCredential = async () => {
-              const result = await remote().describe([ref]);
-              if (!result.ok) throw new Error('credential unavailable');
-              return result.value[ref];
-            };
-            React.useEffect(() => {
-              let active = true;
-              setCredential(null);
-              setSecret('');
-              refreshCredential().then(value => { if (active) setCredential(value); }).catch(() => {});
-              return () => { active = false; };
-            }, [ref]);
+            const stored = secretSet(view);
             const edit = (key, value) => {
               setDraft(old => ({ revision: old ? old.revision : state.revision, values: { ...(old ? old.values : {}), [key]: value } }));
               setNotice(''); setTestState('idle');
             };
+            const editSecret = value => { setSecret(value); setNotice(''); setTestState('idle'); };
             const save = async event => {
               event.preventDefault();
-              if (!draft) return;
+              if (!draft && !secret) return;
               setBusy(true); setNotice(''); setFailed(false);
               try {
-                const ops = Object.entries(draft.values).map(([key, value]) => ({ op: 'set', path: [key], value: key === 'rpcPort' || key === 'rpcTimeoutMs' ? Number(value) : value }));
-                if (!await form.mutate(ops, draft.revision)) throw new Error('settings refused');
-                setDraft(null); setNotice(t('saved'));
+                const ops = Object.entries(draft ? draft.values : {})
+                  .map(([key, value]) => ({ op: 'set', path: [key], value: key === 'rpcPort' || key === 'rpcTimeoutMs' ? Number(value) : value }));
+                if (secret) ops.push({ op: 'set', path: ['rpcSecret'], value: secret });
+                if (ops.length === 0) return;
+                if (!await form.mutate(ops, draft ? draft.revision : state.revision)) throw new Error('settings refused');
+                setDraft(null); setSecret(''); setNotice(t('saved'));
               } catch { setFailed(true); setNotice(t('rejected')); }
               finally { setBusy(false); }
             };
-            const writeSecret = async clear => {
+            const clearSecret = async () => {
               setBusy(true); setNotice(''); setFailed(false);
               try {
-                const result = clear ? await remote().unset(ref) : await remote().set(ref, secret);
-                if (!result.ok) throw new Error('credential refused');
-                setSecret('');
-                setCredential(await refreshCredential());
-                setNotice(t('secretSaved'));
-              } catch { setFailed(true); setNotice(t('secretFailed')); }
+                if (!await form.mutate([{ op: 'unset', path: ['rpcSecret'] }], state.revision)) throw new Error('settings refused');
+                setSecret(''); setNotice(t('secretCleared'));
+              } catch { setFailed(true); setNotice(t('rejected')); }
               finally { setBusy(false); }
             };
             const testConnection = async () => {
@@ -140,13 +136,13 @@ window.__ModuleLoader__.load({
                 const response = await fetch('./api/aria2-rpc.test', {
                   method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
                   signal: controller.signal,
-                  body: JSON.stringify({ rpcHost: current.rpcHost, rpcPort: Number(current.rpcPort), rpcTimeoutMs: Number(current.rpcTimeoutMs), rpcSecretRef: current.rpcSecretRef, ...(secret ? { secret } : {}) }),
+                  body: JSON.stringify({ rpcHost: current.rpcHost, rpcPort: Number(current.rpcPort), rpcTimeoutMs: Number(current.rpcTimeoutMs), ...(secret ? { rpcSecret: secret } : {}) }),
                 });
                 const result = await response.json();
                 if (controller.signal.aborted) return;
                 if (response.ok && result.ok === true && typeof result.version === 'string') { setTestState('success'); setNotice(t('connected') + result.version); }
                 else {
-                  const code = ['NETWORK', 'TIMEOUT', 'RPC_ERROR', 'HTTP_ERROR', 'INVALID_INPUT', 'BAD_RESPONSE', 'REDIRECT', 'RESPONSE_TOO_LARGE', 'ABORTED', 'CREDENTIAL_ERROR'].includes(result.code) ? result.code : 'TRANSPORT_ERROR';
+                  const code = ['NETWORK', 'TIMEOUT', 'RPC_ERROR', 'HTTP_ERROR', 'INVALID_INPUT', 'BAD_RESPONSE', 'REDIRECT', 'RESPONSE_TOO_LARGE', 'ABORTED', 'CONFIG_ERROR'].includes(result.code) ? result.code : 'TRANSPORT_ERROR';
                   setTestState('failure'); setFailed(true); setNotice(t('testFailed') + t(code));
                 }
               } catch {
@@ -168,17 +164,15 @@ window.__ModuleLoader__.load({
                 field('rpcHost', 'host', '127.0.0.1', 'text', { pattern: '[A-Za-z0-9][A-Za-z0-9.\\-]*' }),
                 h('p', { className: 'aria2-rpc-note' }, t('hostHint')),
                 h('div', { className: 'aria2-rpc-pair' }, field('rpcPort', 'port', 6800, 'number', { min: 1, max: 65535, step: 1 }), field('rpcTimeoutMs', 'timeout', 10000, 'number', { min: 1, max: 60000, step: 1 })),
-                h('div', { className: 'aria2-rpc-actions' }, h('button', { type: 'submit', disabled: disabled || !draft }, t(busy ? 'saving' : 'save'))),
-              ),
-              h('fieldset', { disabled: disabled || !credential || !credential.writable || !!draft },
-                h('div', { className: 'aria2-rpc-secret-head' },
-                  h('label', { htmlFor: 'aria2-secret' }, t('secret')),
-                  h('span', { className: `aria2-rpc-status ${credential && credential.configured ? 'configured' : 'missing'}` }, t(credential ? credential.configured ? 'configured' : 'missing' : 'unknown'))),
-                h('input', { id: 'aria2-secret', type: 'password', autoComplete: 'new-password', placeholder: 'rpc-secret', value: secret, onChange: e => setSecret(e.target.value) }),
-                h('p', { className: 'aria2-rpc-note' }, t('secretHint')),
-                h('div', { className: 'aria2-rpc-actions' },
-                  h('button', { type: 'button', disabled: !secret, onClick: () => writeSecret(false) }, t('saveSecret')),
-                  h('button', { type: 'button', disabled: !credential || !credential.configured, onClick: () => writeSecret(true) }, t('clearSecret'))),
+                h('fieldset', { disabled },
+                  h('div', { className: 'aria2-rpc-secret-head' },
+                    h('label', { htmlFor: 'aria2-secret' }, t('secret')),
+                    stored === undefined ? null : h('span', { className: `aria2-rpc-status ${stored ? 'configured' : 'missing'}` }, t(stored ? 'configured' : 'missing'))),
+                  h('input', { id: 'aria2-secret', type: 'password', autoComplete: 'new-password', placeholder: 'rpc-secret', value: secret, disabled, onChange: e => editSecret(e.target.value) }),
+                  h('p', { className: 'aria2-rpc-note' }, t('secretHint')),
+                  h('div', { className: 'aria2-rpc-actions' },
+                    h('button', { type: 'submit', disabled: disabled || (!draft && !secret) }, t(busy ? 'saving' : 'save')),
+                    stored && h('button', { type: 'button', disabled, onClick: clearSecret }, t('clearSecret')))),
               ),
               h('div', { className: 'aria2-rpc-actions' }, h('button', { type: 'button', className: `aria2-rpc-test ${testState === 'success' ? 'success' : testState === 'failure' ? 'failure' : ''}`, disabled, onClick: testConnection }, t(testing ? 'testing' : 'test'))),
               notice && h('p', { role: failed ? 'alert' : 'status', className: `aria2-rpc-note${failed ? ' aria2-rpc-error' : ''}` }, notice),
