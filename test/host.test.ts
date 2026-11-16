@@ -54,16 +54,28 @@ test('four exact tool names and lifecycle cleanup', () => {
   assert.equal(plugin.definitions.size, 0);
 });
 
-test('read-only and plan mode block mutations before RPC', async () => {
-  for (const [mode, plan] of [['read-only', false], ['workspace-write', false], ['danger-full-access', true]] as const) {
-    const plugin = mount(mode, plan);
-    for (const name of ['aria2_download', 'aria2_control']) {
-      const result = await plugin.definitions.get(name)!.execute({}, { agent: { id: 'test' }, signal: new AbortController().signal } as never);
-      assert.equal((result as { error: { code: string } }).error.code, 'PERMISSION_DENIED');
+test('read-only, workspace-write and plan mode block mutations before any RPC request', async () => {
+  const previous = globalThis.fetch;
+  let fetches = 0;
+  globalThis.fetch = async () => { fetches++; throw new Error('unexpected request'); };
+  try {
+    for (const [mode, plan] of [['read-only', false], ['workspace-write', false], ['danger-full-access', true]] as const) {
+      const plugin = mount(mode, plan);
+      for (const name of ['aria2_download', 'aria2_control']) {
+        const result = await plugin.definitions.get(name)!.execute(
+          { url: 'https://example.com/file', gid: '1234567890abcdef', action: 'pause' },
+          { agent: { id: 'test' }, signal: new AbortController().signal } as never,
+        );
+        const error = (result as { error: { code: string; message: string } }).error;
+        assert.equal(error.code, 'PERMISSION_DENIED');
+        assert.match(error.message, /未发送 RPC/);
+      }
+      assert.equal(plugin.credentialAccesses(), 0);
+      plugin.dispose();
     }
-    assert.equal(plugin.credentialAccesses(), 0);
-    plugin.dispose();
-  }
+    // The guard runs before any client is built: a denied mutation never reaches aria2.
+    assert.equal(fetches, 0);
+  } finally { globalThis.fetch = previous; }
 });
 
 test('the configured secret is sent as the aria2 token and the credential store is never touched', async () => {
