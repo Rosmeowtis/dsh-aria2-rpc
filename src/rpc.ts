@@ -258,6 +258,16 @@ function listItems(value: unknown): Aria2StatusResult[] {
   if (!Array.isArray(value)) fail('BAD_RESPONSE', 'aria2 returned an invalid task list');
   return value.map(listItem);
 }
+/** Whether a parsed payload is a well-formed JSON-RPC error answering this request. */
+function isErrorEnvelope(payload: unknown, id: string): boolean {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  const p = payload as Record<string, unknown>;
+  if (p.jsonrpc !== '2.0' || p.id !== id || !Object.hasOwn(p, 'error') || Object.hasOwn(p, 'result')) return false;
+  const error = p.error;
+  return !!error && typeof error === 'object' && !Array.isArray(error)
+    && Number.isInteger((error as Record<string, unknown>).code)
+    && typeof (error as Record<string, unknown>).message === 'string';
+}
 function offsetValue(value: unknown): number {
   if (value === undefined) return 0;
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 1_000_000) {
@@ -315,24 +325,23 @@ export function createAria2Client(config: Aria2ClientConfig): Aria2Client {
         void response.body?.cancel().catch(() => {});
         fail('REDIRECT', 'aria2 endpoint redirect rejected');
       }
-      if (response.status !== 200) {
-        void response.body?.cancel().catch(() => {});
-        fail('HTTP_ERROR', `aria2 endpoint returned HTTP ${response.status}`);
-      }
+      // aria2 answers an unauthorized request with HTTP 400 and a JSON-RPC error body; read the
+      // bounded body once so a rejected token is reported as an RPC rejection, not a port problem.
       const text = await responseText(response);
       let payload: unknown;
-      try { payload = JSON.parse(text); } catch { fail('BAD_RESPONSE', 'aria2 returned invalid JSON'); }
+      try { payload = JSON.parse(text); } catch { payload = undefined; }
+      if (response.status !== 200) {
+        if (isErrorEnvelope(payload, id)) fail('RPC_ERROR', 'aria2 rejected the request (task may not exist or RPC authorization failed)');
+        fail('HTTP_ERROR', `aria2 endpoint returned HTTP ${response.status}`);
+      }
+      if (payload === undefined) fail('BAD_RESPONSE', 'aria2 returned invalid JSON');
       if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail('BAD_RESPONSE', 'aria2 returned invalid JSON-RPC envelope');
       const p = payload as Record<string, unknown>;
       const hasResult = Object.hasOwn(p, 'result');
       const hasError = Object.hasOwn(p, 'error');
       if (p.jsonrpc !== '2.0' || p.id !== id || hasResult === hasError) fail('BAD_RESPONSE', 'aria2 returned invalid JSON-RPC envelope or id');
       if (hasError) {
-        if (!p.error || typeof p.error !== 'object' || Array.isArray(p.error)
-          || !Number.isInteger((p.error as Record<string, unknown>).code)
-          || typeof (p.error as Record<string, unknown>).message !== 'string') {
-          fail('BAD_RESPONSE', 'aria2 returned malformed RPC error');
-        }
+        if (!isErrorEnvelope(payload, id)) fail('BAD_RESPONSE', 'aria2 returned malformed RPC error');
         fail('RPC_ERROR', 'aria2 rejected the request (task may not exist or RPC authorization failed)');
       }
       return p.result;

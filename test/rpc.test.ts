@@ -223,6 +223,29 @@ test('explicit RPC errors (including unknown gid) are safe and not unknown-effec
   }
 });
 
+test('a 400 JSON-RPC rejection is a definite RPC_ERROR, while a non-JSON HTTP failure stays HTTP_ERROR', async (t) => {
+  let mode = 'auth';
+  const { client } = await mock(t, (req, res) => {
+    if (mode === 'auth') {
+      res.writeHead(400);
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: 1, message: 'Unauthorized' } }));
+    } else if (mode === 'other') {
+      res.writeHead(403);
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: req.id, error: { code: 1, message: 'Unauthorized' } }));
+    } else {
+      res.writeHead(400);
+      res.end('SECRET');
+    }
+  }, { secret: 'TOKEN' });
+  // A rejected token proves the request was not executed, so a mutation must not become unknown-effect.
+  await assert.rejects(client.download({ url: 'https://example.com' }), isCode('RPC_ERROR'));
+  await assert.rejects(client.status({ gid: GID }), isCode('RPC_ERROR'));
+  mode = 'other';
+  await assert.rejects(client.control({ gid: GID, action: 'pause' }), isCode('RPC_ERROR'));
+  mode = 'plain';
+  await assert.rejects(client.status({ gid: GID }), isCode('HTTP_ERROR'));
+});
+
 test('bad id/envelope/result, redirect, HTTP error and streamed oversize preserve mutation gid', async (t) => {
   let mode = '';
   let redirects = 0;
